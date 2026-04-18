@@ -72,48 +72,52 @@ def run_docker(shared_dir):
     subprocess.run(cmd, check=True, timeout=100)
 
 
-def run_java_files():
-    for dir_path in data_dir.iterdir():
-        if not dir_path.is_dir():
+def process_dir(dir_path):
+    print(f"=== Directory: {dir_path} ===")
+
+    for java_file in dir_path.glob("[pP]*[0-9].java"):
+        print(f"--- File: {java_file.name} ---")
+
+        try:
+            compile_result = subprocess.run(
+                ["javac", java_file.name],
+                cwd=dir_path,
+                capture_output=True,
+                text=True
+            )
+
+            if compile_result.returncode != 0:
+                print("[Compile Error]")
+                print(compile_result.stderr)
+                continue
+
+            class_name = java_file.stem
+
+            run_result = subprocess.run(
+                ["java", class_name],
+                cwd=dir_path,
+                capture_output=True,
+                text=True
+            )
+
+            if run_result.returncode != 0:
+                print("[Runtime Error]")
+                print(run_result.stderr)
+                continue
+
+            print(run_result.stdout)
+
+        except Exception as e:
+            print(f"[Unexpected Error] {e}")
             continue
 
-        print(f"=== Directory: {dir_path.name} ===")
+    for subdir in dir_path.iterdir():
+        if subdir.is_dir():
+            process_dir(subdir)
 
-        for java_file in dir_path.glob("*.java"):
-            print(f"--- File: {java_file.name} ---")
 
-            try:
-                compile_result = subprocess.run(
-                    ["javac", java_file.name],
-                    cwd=dir_path,
-                    capture_output=True,
-                    text=True
-                )
-
-                if compile_result.returncode != 0:
-                    print("[Compile Error]")
-                    print(compile_result.stderr)
-                    continue
-
-                class_name = java_file.stem
-
-                run_result = subprocess.run(
-                    ["java", class_name],
-                    cwd=dir_path,
-                    capture_output=True,
-                    text=True
-                )
-
-                if run_result.returncode != 0:
-                    print("[Runtime Error]")
-                    print(run_result.stderr)
-                    continue
-
-                print(run_result.stdout)
-
-            except Exception as e:
-                print(f"[Unexpected Error] {e}")
-                continue
+def run_java_files():
+    process_dir(data_dir)
 
 
 def unzip():
