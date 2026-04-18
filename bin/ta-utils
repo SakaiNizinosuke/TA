@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+
+from pathlib import Path
+import argparse
+import sys
+import subprocess
+import zipfile
+import shutil
+downloads_dir = Path.home() / "Downloads"
+current_dir = Path.cwd()
+data_dir = Path("/data")
+
+
+def move_zip_files():
+    for zip_path in downloads_dir.glob("*.zip"):
+        dest = current_dir / zip_path.name
+        try:
+            shutil.move(str(zip_path), str(dest))
+            print(f"Moved: {zip_path} -> {dest}")
+        except Exception as e:
+            print(f"Failed to move {zip_path}: {e}")
+
+
+def unzip_files():
+    for zip_path in current_dir.glob("*.zip"):
+        try:
+            extract_dir = current_dir / zip_path.stem
+            extract_dir.mkdir(exist_ok=True)
+
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(extract_dir)
+
+            print(f"Extracted: {zip_path} -> {extract_dir}")
+
+        except zipfile.BadZipfile:
+            print(f"Bad zip file: {zipfile}")
+        except Exception as e:
+            print(f"Failed to extract {zip_path}: {e}")
+
+
+def delete_zip_files():
+    for zip_path in current_dir.glob("*.zip"):
+        try:
+            zip_path.unlink()
+            print(f"Deleted: {zipfile}")
+        except Exception as e:
+            print(f"Failed to delete {zipfile}: {e}")
+
+
+def run_docker(shared_dir):
+    host_path = Path(shared_dir).expanduser().resolve()
+
+    if not host_path.exists():
+        print(f"Error: directory does not exist: {host_path}", file=sys.stderr)
+        sys.exit(1)
+
+    cmd = [
+        "docker", "run", "--rm",
+        "--memory", "256m",
+        "--cpus", "1.0",
+        "--pids-limit", "64",
+        "--network", "none",
+        "--read-only",
+        "--tmpfs", "/tmp",
+        "--cap-drop", "ALL",
+        "--security-opt", "no-new-privileges",
+        "-v", f"{host_path}:/data",
+        "java-judge"
+    ]
+
+    print("Running:", " ".join(cmd))
+    subprocess.run(cmd, check=True, timeout=100)
+
+
+def run_java_files():
+    for dir_path in data_dir.iterdir():
+        if not dir_path.is_dir():
+            continue
+
+        print(f"=== Directory: {dir_path.name} ===")
+
+        for java_file in dir_path.glob("*.java"):
+            print(f"--- File: {java_file.name} ---")
+
+            try:
+                compile_result = subprocess.run(
+                    ["javac", java_file.name],
+                    cwd=dir_path,
+                    capture_output=True,
+                    text=True
+                )
+
+                if compile_result.returncode != 0:
+                    print("[Compile Error]")
+                    print(compile_result.stderr)
+                    continue
+
+                class_name = java_file.stem
+
+                run_result = subprocess.run(
+                    ["java", class_name],
+                    cwd=dir_path,
+                    capture_output=True,
+                    text=True
+                )
+
+                if run_result.returncode != 0:
+                    print("[Runtime Error]")
+                    print(run_result.stderr)
+                    continue
+
+                print(run_result.stdout)
+
+            except Exception as e:
+                print(f"[Unexpected Error] {e}")
+                continue
+
+
+def unzip():
+    move_zip_files()
+    unzip_files()
+    delete_zip_files()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="command")
+    subparsers.add_parser("unzip")
+
+    docker_parser = subparsers.add_parser("docker")
+    docker_parser.add_argument(
+        "dir",
+        help="directory to mount into container"
+    )
+
+    subparsers.add_parser("run")
+
+    args = parser.parse_args()
+    if args.command == "unzip":
+        unzip()
+    elif args.command == "docker":
+        run_docker(args.dir)
+    elif args.command == "run":
+        run_java_files()
+    else:
+        parser.print_help()
+
+
+if __name__ == "__main__":
+    main()
